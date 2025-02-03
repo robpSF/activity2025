@@ -1,33 +1,62 @@
 import streamlit as st
 import pandas as pd
+import re
+import matplotlib.pyplot as plt
 
-def process_file(uploaded_file):
-    # Load the Excel file
-    xls = pd.ExcelFile(uploaded_file)
+def clean_space_id(space_id):
+    if pd.isna(space_id):
+        return None
+    cleaned = re.sub(r'\D', '', str(space_id))  # Remove non-numeric characters
+    return int(cleaned) if cleaned else None
+
+def process_files(excel_file, csv_file):
+    # Load Excel file
+    xls = pd.ExcelFile(excel_file)
     df = xls.parse(xls.sheet_names[0])  # Assuming first sheet is relevant
+    df['Spaces'] = df['Spaces'].apply(clean_space_id)
+    df_clean = df.dropna(subset=['Spaces'])
     
-    # Create a dictionary mapping spaces to organisations
-    spaces_dict = {}
-    for _, row in df.iterrows():
-        organisation = row['Organisation']
-        spaces = str(row['Spaces']).split(',') if pd.notna(row['Spaces']) else []
-        
-        for space in spaces:
-            space = space.strip()
-            if space:
-                if space in spaces_dict:
-                    spaces_dict[space].append(organisation)
-                else:
-                    spaces_dict[space] = [organisation]
+    # Load CSV file
+    df_csv = pd.read_csv(csv_file)
+    df_csv['metadata.activity_partition_id'] = df_csv['metadata.activity_partition_id'].apply(clean_space_id)
     
-    return spaces_dict
+    # Create a mapping from Spaces to Organisations
+    spaces_to_org = {row['Spaces']: row['Organisation'] for _, row in df_clean.iterrows()}
+    
+    # Map activity IDs to organisations
+    df_csv['Organisation'] = df_csv['metadata.activity_partition_id'].map(spaces_to_org)
+    
+    # Count occurrences per organisation
+    org_activity_counts = df_csv['Organisation'].value_counts()
+    
+    # Get the top 20 most active organisations
+    top_20_orgs = org_activity_counts.head(20)
+    
+    # Identify organisations with no activity in the CSV file
+    orgs_with_no_activity = set(df['Organisation']) - set(df_csv['Organisation'].dropna())
+    df_orgs_no_activity = pd.DataFrame({'Organisation': list(orgs_with_no_activity)})
+    
+    return top_20_orgs, df_orgs_no_activity
 
 # Streamlit UI
-st.title("Spaces to Organisations Mapping")
+st.title("Spaces to Organisations Analysis")
 
-uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
+excel_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
+csv_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
-if uploaded_file is not None:
-    spaces_dict = process_file(uploaded_file)
-    st.write("### Spaces Dictionary:")
-    st.json(spaces_dict)
+if excel_file is not None and csv_file is not None:
+    top_20_orgs, df_orgs_no_activity = process_files(excel_file, csv_file)
+    
+    # Display bar chart of top 20 most active organisations
+    st.write("### Top 20 Most Active Organisations")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    top_20_orgs.plot(kind='bar', ax=ax)
+    ax.set_xlabel("Organisation")
+    ax.set_ylabel("Activity Count")
+    ax.set_title("Top 20 Most Active Organisations")
+    ax.tick_params(axis='x', rotation=45)
+    st.pyplot(fig)
+    
+    # Show table of organisations with no activity
+    st.write("### Organisations with No Referenced Activity")
+    st.dataframe(df_orgs_no_activity)
