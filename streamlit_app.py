@@ -47,14 +47,13 @@ csv_file = st.file_uploader("Upload a CSV file", type=["csv"])
 if excel_file is not None and csv_file is not None:
     top_20_orgs, df_orgs_no_activity = process_files(excel_file, csv_file)
     
-    # Display bar chart of top 20 most active organisations
+    # Display horizontal bar chart of top 20 most active organisations
     st.write("### Top 20 Most Active Organisations")
     fig, ax = plt.subplots(figsize=(12, 6))
-    top_20_orgs.plot(kind='bar', ax=ax)
-    ax.set_xlabel("Organisation")
-    ax.set_ylabel("Activity Count")
+    top_20_orgs.sort_values().plot(kind='barh', ax=ax)
+    ax.set_xlabel("Activity Count")
+    ax.set_ylabel("Organisation")
     ax.set_title("Top 20 Most Active Organisations")
-    ax.tick_params(axis='x', rotation=45)
     st.pyplot(fig)
     
     # Show table of organisations with no activity
